@@ -1,0 +1,18 @@
+# Секреты
+*.env
+secrets.*
+config.local.*
+
+# Система
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Редакторы
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Логи
+*.log

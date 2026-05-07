@@ -1,0 +1,357 @@
+.ai-block-wrap {
+  margin-top: 10px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 15px;
+}
+
+/* ── Индикатор настроения ── */
+
+.ai-sentiment-badge {
+  display: inline-block;
+  margin-top: 6px;
+  margin-bottom: 4px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.ai-sentiment-positive { background: #dcfce7; color: #15803d; }
+.ai-sentiment-negative { background: #fee2e2; color: #dc2626; }
+.ai-sentiment-neutral  { background: #f1f5f9; color: #64748b; }
+
+/* ── Строка управления ── */
+
+.ai-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+/* ── Переключатели ── */
+
+.ai-length-toggle,
+.ai-tone-toggle {
+  display: flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.ai-len-btn,
+.ai-tone-btn {
+  padding: 6px 11px;
+  border: none;
+  background: white;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border-right: 1px solid #cbd5e1;
+}
+
+.ai-len-btn:last-child,
+.ai-tone-btn:last-child { border-right: none; }
+
+.ai-len-btn:hover,
+.ai-tone-btn:hover { background: #f1f5f9; color: #1e40af; }
+
+.ai-len-btn.active            { color: white; font-weight: 600; }
+.ai-len-btn[data-len="short"].active    { background: #16a34a; }
+.ai-len-btn[data-len="medium"].active   { background: #ca8a04; }
+.ai-len-btn[data-len="detailed"].active { background: #dc2626; }
+
+.ai-tone-btn.active { background: #2563eb; color: white; font-weight: 600; }
+
+/* ── Кнопка генерации ── */
+
+.ai-gen-btn {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: white;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+  transition: background 0.2s, transform 0.15s;
+}
+
+.ai-gen-btn:hover {
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
+  transform: translateY(-1px);
+}
+
+.ai-gen-btn:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
+
+/* ── Панель результата ── */
+
+.ai-result-panel {
+  margin-top: 8px;
+  background: #fff;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.08);
+  overflow: hidden;
+}
+
+.ai-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 14px;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-word-count {
+  font-size: 11px;
+  opacity: 0.8;
+  font-weight: 400;
+}
+
+.ai-close-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.8;
+  line-height: 1;
+  transition: opacity 0.2s;
+}
+
+.ai-close-btn:hover { opacity: 1; }
+
+/* ── Textarea результата ── */
+
+.ai-result-text {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid #f0f4ff;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #1f2937;
+  resize: vertical;
+  min-height: 150px;
+  outline: none;
+  background: #fafcff;
+}
+
+.ai-result-text:focus { background: #f5f8ff; }
+
+/* ── Быстрые правки ── */
+
+.ai-refine-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #f8faff;
+  border-bottom: 1px solid #f0f4ff;
+  flex-wrap: wrap;
+}
+
+.ai-refine-label {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+  margin-right: 2px;
+}
+
+.ai-refine-btn {
+  padding: 4px 10px;
+  border: 1px solid #c7d2fe;
+  background: white;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #4f46e5;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ai-refine-btn:hover { background: #eef2ff; border-color: #818cf8; }
+.ai-refine-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Кнопки действий ── */
+
+.ai-result-actions {
+  display: flex;
+  gap: 7px;
+  padding: 10px 14px;
+  background: #f8faff;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ai-regen-btn,
+.ai-copy-btn {
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #374151;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.ai-regen-btn:hover,
+.ai-copy-btn:hover { background: #f1f5f9; }
+
+.ai-regen-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.ai-insert-btn {
+  flex: 1;
+  padding: 8px 14px;
+  border: none;
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: white;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+  white-space: nowrap;
+}
+
+.ai-insert-btn:hover {
+  background: linear-gradient(135deg, #15803d, #166534);
+  transform: translateY(-1px);
+}
+
+/* ── Шаблоны ── */
+
+.ai-tpl-wrap { position: relative; }
+
+.ai-tpl-btn {
+  padding: 8px 11px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #374151;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.ai-tpl-btn:hover { background: #f1f5f9; }
+
+.ai-tpl-dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 9999;
+  overflow: hidden;
+}
+
+.ai-tpl-item {
+  padding: 9px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #1f2937;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.15s;
+}
+
+.ai-tpl-item:last-child { border-bottom: none; }
+.ai-tpl-item:hover { background: #eff6ff; color: #1d4ed8; }
+
+.ai-tpl-empty {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* ── Кнопка пакетной генерации ── */
+
+.ai-batch-btn {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 22px;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: white;
+  border: none;
+  border-radius: 50px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 24px rgba(109, 40, 217, 0.4);
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+.ai-batch-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 32px rgba(109, 40, 217, 0.5);
+  background: linear-gradient(135deg, #6d28d9, #5b21b6);
+}
+
+.ai-batch-btn:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Тост-уведомление ── */
+
+.ai-toast {
+  position: fixed;
+  bottom: 90px;
+  right: 28px;
+  z-index: 999999;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+}
+
+.ai-toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ai-toast-success { background: #16a34a; }
+.ai-toast-error   { background: #dc2626; }

@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Клиника Картавенко — ИИ Ответы",
+  "version": "2.0",
+  "description": "Автоматическая генерация ответов ученикам через ИИ на платформе GetCourse",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://*.klinikakartavenko.com/*",
+    "https://*.getcourse.ru/*",
+    "https://api.groq.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.klinikakartavenko.com/teach/control/answers/*",
+        "https://*.getcourse.ru/teach/control/answers/*"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
