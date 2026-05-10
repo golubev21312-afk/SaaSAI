@@ -1,5 +1,5 @@
 const KEYS = ['groqApiKey', 'curatorName', 'templates', 'customPrompt',
-               'togSentiment', 'togCollapse', 'togBatch', 'togDrafts', 'statsWeek'];
+               'togSentiment', 'togBatch', 'togDrafts', 'statsWeek'];
 
 // ── Загрузка ──
 
@@ -8,13 +8,10 @@ chrome.storage.local.get(KEYS, result => {
   if (result.curatorName)  document.getElementById('curator-name').value = result.curatorName;
   if (result.customPrompt) document.getElementById('custom-prompt').value = result.customPrompt;
 
-  // Тумблеры (по умолчанию все включены)
   setToggle('tog-sentiment', result.togSentiment !== false);
-  setToggle('tog-collapse',  result.togCollapse  !== false);
   setToggle('tog-batch',     result.togBatch     !== false);
   setToggle('tog-drafts',    result.togDrafts    !== false);
 
-  // Статистика
   const week = result.statsWeek || {};
   const today = new Date().toISOString().slice(0, 10);
   document.getElementById('stat-today').textContent = `Сегодня: ${week[today] || 0}`;
@@ -36,10 +33,10 @@ function setToggle(id, val) {
 // ── Сохранение настроек ──
 
 document.getElementById('save-btn').addEventListener('click', () => {
-  const apiKey      = document.getElementById('api-key').value.trim();
-  const curatorName = document.getElementById('curator-name').value.trim();
+  const apiKey       = document.getElementById('api-key').value.trim();
+  const curatorName  = document.getElementById('curator-name').value.trim();
   const customPrompt = document.getElementById('custom-prompt').value.trim();
-  const status      = document.getElementById('status');
+  const status       = document.getElementById('status');
 
   if (!apiKey) {
     status.style.color = '#dc2626';
@@ -53,13 +50,12 @@ document.getElementById('save-btn').addEventListener('click', () => {
   }
 
   const togSentiment = document.getElementById('tog-sentiment').checked;
-  const togCollapse  = document.getElementById('tog-collapse').checked;
   const togBatch     = document.getElementById('tog-batch').checked;
   const togDrafts    = document.getElementById('tog-drafts').checked;
 
   chrome.storage.local.set({
     groqApiKey: apiKey, curatorName, customPrompt,
-    togSentiment, togCollapse, togBatch, togDrafts,
+    togSentiment, togBatch, togDrafts,
   }, () => {
     status.style.color = '#16a34a';
     status.textContent = 'Сохранено!';
@@ -75,6 +71,7 @@ document.getElementById('reset-prompt').addEventListener('click', () => {
 
 // ── Шаблоны ──
 
+// Используем DOM-методы вместо innerHTML — данные из storage не попадают в HTML-парсер
 function renderTemplates(templates) {
   const list = document.getElementById('tpl-list');
   list.innerHTML = '';
@@ -85,14 +82,28 @@ function renderTemplates(templates) {
   templates.forEach((tpl, i) => {
     const item = document.createElement('div');
     item.className = 'tpl-item';
-    item.innerHTML = `
-      <div style="overflow:hidden;">
-        <div class="tpl-item-name">${tpl.name}</div>
-        <div class="tpl-item-text">${tpl.text}</div>
-      </div>
-      <button class="tpl-del-btn" data-index="${i}" title="Удалить">✕</button>
-    `;
-    item.querySelector('.tpl-del-btn').addEventListener('click', () => deleteTemplate(i));
+
+    const info = document.createElement('div');
+    info.style.overflow = 'hidden';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'tpl-item-name';
+    nameEl.textContent = tpl.name;
+
+    const textEl = document.createElement('div');
+    textEl.className = 'tpl-item-text';
+    textEl.textContent = tpl.text;
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'tpl-del-btn';
+    delBtn.title = 'Удалить';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', () => deleteTemplate(i));
+
+    info.appendChild(nameEl);
+    info.appendChild(textEl);
+    item.appendChild(info);
+    item.appendChild(delBtn);
     list.appendChild(item);
   });
 }

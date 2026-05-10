@@ -343,17 +343,6 @@
 
       <label class="toggle-row">
         <div>
-          <div class="toggle-text">Автосвёртка после вставки</div>
-          <div class="toggle-hint">Панель закрывается когда вставляете текст</div>
-        </div>
-        <div class="toggle-switch">
-          <input type="checkbox" id="tog-collapse" checked>
-          <span class="toggle-slider"></span>
-        </div>
-      </label>
-
-      <label class="toggle-row">
-        <div>
           <div class="toggle-text">Кнопка "Сгенерировать все"</div>
           <div class="toggle-hint">Плавающая кнопка внизу экрана</div>
         </div>
@@ -399,8 +388,8 @@
       </div>
       <div class="tpl-list" id="tpl-list"></div>
       <div class="tpl-add-form">
-        <input type="text" id="tpl-name" placeholder="Название шаблона" />
-        <textarea id="tpl-text" rows="3" placeholder="Текст шаблона..."></textarea>
+        <input type="text" id="tpl-name" placeholder="Название шаблона" maxlength="60" />
+        <textarea id="tpl-text" rows="3" placeholder="Текст шаблона..." maxlength="2000"></textarea>
         <button class="tpl-add-btn" id="tpl-add-btn">+ Добавить шаблон</button>
       </div>
     </div>

@@ -42,23 +42,24 @@ const REFINE_PROMPTS = {
   rephrase: 'Перефразируй этот ответ куратора другими словами, сохранив смысл, объём и подпись. Верни только готовый текст:',
 };
 
+// 'strong' и 'b' убраны — слишком широкие, захватывают любой жирный текст
 const NAME_SELECTORS = [
   '.user-name', '.student-name', '.author-name', '.comment-author',
-  '.answer-author', '.author', '.name', 'strong', 'b',
+  '.answer-author', '.author', '.name',
 ];
 
 // ── Настройки ──
 
 let settings = {
   apiKey: '', curatorName: 'куратор', templates: [], customPrompt: '',
-  togSentiment: true, togCollapse: true, togBatch: true, togDrafts: true,
+  togSentiment: true, togBatch: true, togDrafts: true,
 };
 
 function loadSettings() {
   return new Promise(resolve => {
     chrome.storage.local.get([
       'groqApiKey', 'curatorName', 'templates', 'customPrompt',
-      'togSentiment', 'togCollapse', 'togBatch', 'togDrafts',
+      'togSentiment', 'togBatch', 'togDrafts',
     ], result => {
       settings = {
         apiKey:       result.groqApiKey   || '',
@@ -66,7 +67,6 @@ function loadSettings() {
         templates:    result.templates    || [],
         customPrompt: result.customPrompt || '',
         togSentiment: result.togSentiment !== false,
-        togCollapse:  result.togCollapse  !== false,
         togBatch:     result.togBatch     !== false,
         togDrafts:    result.togDrafts    !== false,
       };
@@ -75,7 +75,6 @@ function loadSettings() {
   });
 }
 
-// Перезагружать настройки при изменении в попапе
 chrome.storage.onChanged.addListener(() => { loadSettings().then(applyToggles); });
 
 // ── Утилиты ──
@@ -105,8 +104,12 @@ function countWords(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+// Хеш вместо первых 80 символов — исключает коллизии черновиков у похожих сообщений
 function getDraftKey(text) {
-  return 'ai_draft_' + text.trim().substring(0, 80);
+  const s = text.trim().replace(/\s+/g, ' ');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
+  return 'ai_draft_' + (h >>> 0).toString(36);
 }
 
 function saveDraft(text, reply) {
@@ -124,7 +127,6 @@ function incrementStats() {
   chrome.storage.local.get(['statsWeek'], result => {
     const week = result.statsWeek || {};
     week[today] = (week[today] || 0) + 1;
-    // Чистим данные старше 30 дней
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
@@ -143,33 +145,6 @@ function findName(block) {
   return '';
 }
 
-function findReplyField(block) {
-  const inner = block.querySelector('.new-comment-textarea, textarea, [contenteditable="true"]');
-  if (inner) return inner;
-  let parent = block.parentElement;
-  for (let i = 0; i < 5 && parent; i++) {
-    const found = parent.querySelector('.new-comment-textarea, textarea, [contenteditable="true"]');
-    if (found) return found;
-    parent = parent.parentElement;
-  }
-  return null;
-}
-
-function insertTextToField(field, text) {
-  field.focus();
-  if (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT') {
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype, 'value'
-    ).set;
-    nativeSetter.call(field, text);
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-    field.dispatchEvent(new Event('change', { bubbles: true }));
-  } else {
-    field.textContent = text;
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-}
-
 // ── Тост-уведомление ──
 
 function showToast(message, type = 'success') {
@@ -186,34 +161,27 @@ function showToast(message, type = 'success') {
 
 // ── API ──
 
+// Только прямые дочерние элементы каждого уровня — без обхода всего поддерева
 function extractAutoContext(textEl, studentMessage) {
   const pieces = new Set();
 
-  // Заголовок страницы
   const title = document.title.trim();
   if (title) pieces.add(title);
 
-  // Текст из родительских контейнеров (до 5 уровней вверх)
-  // Берём только короткие строки — это обычно метаданные (дата, название курса, день)
   let parent = textEl.parentElement;
-  for (let i = 0; i < 5 && parent; i++) {
-    [...parent.querySelectorAll('*')].forEach(el => {
-      if (el.children.length > 0) return; // только листовые узлы
+  for (let i = 0; i < 5 && parent && pieces.size < 15; i++) {
+    for (const el of parent.children) {
+      if (el.classList.contains('ai-block-wrap')) continue;
       const text = el.textContent.trim();
-      if (
-        text.length > 3 &&
-        text.length < 150 &&
-        !studentMessage.includes(text) && // не сам ответ ученика
-        !el.closest('.ai-block-wrap')      // не наш UI
-      ) {
+      if (text.length > 3 && text.length < 150 && !studentMessage.includes(text)) {
         pieces.add(text);
       }
-    });
+      if (pieces.size >= 15) break;
+    }
     parent = parent.parentElement;
   }
 
-  // Убираем дубли и объединяем
-  const result = [...pieces].slice(0, 15).join(' | ');
+  const result = [...pieces].join(' | ');
   return result.length > 10 ? result : '';
 }
 
@@ -301,6 +269,13 @@ function createSentimentBadge(text) {
   return badge;
 }
 
+// Единый глобальный обработчик закрытия дропдаунов — один на всю страницу вместо одного на каждую панель
+document.addEventListener('click', e => {
+  if (!e.target.closest('.ai-tpl-wrap')) {
+    document.querySelectorAll('.ai-tpl-dropdown').forEach(d => { d.style.display = 'none'; });
+  }
+});
+
 // ── Панель ──
 
 function createPanel(textEl) {
@@ -319,6 +294,7 @@ function createPanel(textEl) {
   wrap.dataset.length = 'short';
   wrap.dataset.tone = 'warm';
 
+  // savedDraft не вставляется через innerHTML во избежание XSS — значение задаётся через .value ниже
   wrap.innerHTML = `
     <div class="ai-controls">
       <div class="ai-length-toggle">
@@ -343,7 +319,7 @@ function createPanel(textEl) {
           <button class="ai-close-btn" title="Закрыть">✕</button>
         </div>
       </div>
-      <textarea class="ai-result-text" rows="8" placeholder="Здесь появится ответ...">${savedDraft || ''}</textarea>
+      <textarea class="ai-result-text" rows="8" placeholder="Здесь появится ответ..."></textarea>
       <div class="ai-refine-row">
         <span class="ai-refine-label">Правки:</span>
         <button class="ai-refine-btn" data-refine="shorter">Короче</button>
@@ -374,10 +350,12 @@ function createPanel(textEl) {
   const toneBtns   = wrap.querySelectorAll('.ai-tone-btn');
   const refineBtns = wrap.querySelectorAll('.ai-refine-btn');
 
-  // Контекст собирается автоматически при каждой генерации
   const autoContext = extractAutoContext(textEl, studentMessage);
 
-  if (savedDraft) wordCount.textContent = countWords(savedDraft) + ' сл.';
+  if (savedDraft) {
+    resultTA.value = savedDraft;
+    wordCount.textContent = countWords(savedDraft) + ' сл.';
+  }
 
   lenBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -421,10 +399,6 @@ function createPanel(textEl) {
       });
     }
     tplDrop.style.display = 'block';
-  });
-
-  document.addEventListener('click', e => {
-    if (!wrap.contains(e.target)) tplDrop.style.display = 'none';
   });
 
   // Быстрые правки
@@ -491,6 +465,8 @@ function createPanel(textEl) {
     navigator.clipboard.writeText(resultTA.value).then(() => {
       copyBtn.textContent = 'Скопировано!';
       setTimeout(() => { copyBtn.textContent = 'Копировать'; }, 2000);
+    }).catch(() => {
+      showToast('Не удалось скопировать — нет доступа к буферу', 'error');
     });
   });
 
@@ -507,31 +483,35 @@ async function runBatchGeneration() {
 
   batchBtn.disabled = true;
 
-  for (let i = 0; i < wraps.length; i++) {
-    batchBtn.textContent = `Генерирую ${i + 1} / ${wraps.length}...`;
-    const wrap = wraps[i];
-    const genBtn = wrap.querySelector('.ai-gen-btn');
+  try {
+    for (let i = 0; i < wraps.length; i++) {
+      batchBtn.textContent = `Генерирую ${i + 1} / ${wraps.length}...`;
+      const wrap = wraps[i];
+      const genBtn = wrap.querySelector('.ai-gen-btn');
 
-    wrap.dispatchEvent(new CustomEvent('ai-generate'));
+      wrap.dispatchEvent(new CustomEvent('ai-generate'));
 
-    await new Promise(r => setTimeout(r, 300));
-    await new Promise(resolve => {
-      const timeout = setTimeout(resolve, 30000);
-      const check = setInterval(() => {
-        if (!genBtn.disabled) {
-          clearInterval(check);
-          clearTimeout(timeout);
-          resolve();
-        }
-      }, 400);
-    });
+      await new Promise(r => setTimeout(r, 300));
+      await new Promise(resolve => {
+        const timeout = setTimeout(resolve, 30000);
+        const check = setInterval(() => {
+          if (!genBtn.disabled) {
+            clearInterval(check);
+            clearTimeout(timeout);
+            resolve();
+          }
+        }, 400);
+      });
 
-    await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 400));
+    }
+    showToast(`Готово! Сгенерировано ${wraps.length} ответов`);
+  } catch (err) {
+    showToast('Ошибка пакетной генерации: ' + err.message, 'error');
+  } finally {
+    batchBtn.textContent = 'Сгенерировать все';
+    batchBtn.disabled = false;
   }
-
-  batchBtn.textContent = 'Сгенерировать все';
-  batchBtn.disabled = false;
-  showToast(`Готово! Сгенерировано ${wraps.length} ответов`);
 }
 
 function applyToggles() {
@@ -593,7 +573,12 @@ function scanPage() {
   ensureBatchButton();
 }
 
-const observer = new MutationObserver(() => scanPage());
+// Debounce — scanPage не вызывается на каждое изменение DOM, а ждёт паузы в 300мс
+let scanTimer = null;
+const observer = new MutationObserver(() => {
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(scanPage, 300);
+});
 observer.observe(document.body, { childList: true, subtree: true });
 
 loadSettings().then(() => scanPage());
