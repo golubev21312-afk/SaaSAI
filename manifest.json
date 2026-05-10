@@ -7,13 +7,17 @@
   "host_permissions": [
     "https://*.klinikakartavenko.com/*",
     "https://*.getcourse.ru/*",
+    "https://doktor-kartavenko24.ru/*",
+    "https://kartavenkodoc.com/*",
     "https://api.groq.com/*"
   ],
   "content_scripts": [
     {
       "matches": [
         "https://*.klinikakartavenko.com/teach/control/answers/*",
-        "https://*.getcourse.ru/teach/control/answers/*"
+        "https://*.getcourse.ru/teach/control/answers/*",
+        "https://doktor-kartavenko24.ru/teach/control/answers/*",
+        "https://kartavenkodoc.com/teach/control/answers/*"
       ],
       "js": ["content.js"],
       "css": ["styles.css"],
