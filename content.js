@@ -42,8 +42,8 @@ const REFINE_PROMPTS = {
   rephrase: 'Перефразируй этот ответ куратора другими словами, сохранив смысл, объём и подпись. Верни только готовый текст:',
 };
 
-// 'strong' и 'b' убраны — слишком широкие, захватывают любой жирный текст
 const NAME_SELECTORS = [
+  '.title',                                   // GetCourse: div.answer-content > div.title
   '.user-name', '.student-name', '.author-name', '.comment-author',
   '.answer-author', '.author', '.name',
 ];
@@ -135,11 +135,23 @@ function incrementStats() {
   });
 }
 
+function looksLikeName(text) {
+  return /^[А-ЯЁа-яёA-Z][А-ЯЁа-яёA-Za-z\s\-]{1,40}$/.test(text) && text.split(/\s+/).length <= 3;
+}
+
 function findName(block) {
   for (const sel of NAME_SELECTORS) {
     const el = block.querySelector(sel);
-    if (el && el.textContent.trim()) {
-      return el.textContent.trim().split(' ').slice(0, 2).join(' ');
+    if (el) {
+      const text = el.textContent.trim();
+      if (text) return text.split(/[\s,|—–-]+/).slice(0, 2).join(' ');
+    }
+  }
+  // Запасной вариант: жирный текст похожий на имя (кириллица, 1–3 слова)
+  for (const tag of ['strong', 'b', 'a']) {
+    for (const el of block.querySelectorAll(tag)) {
+      const text = el.textContent.trim();
+      if (looksLikeName(text)) return text.split(/\s+/).slice(0, 2).join(' ');
     }
   }
   return '';
