@@ -269,6 +269,17 @@
       padding: 8px 0;
     }
 
+    .tpl-hint {
+      font-size: 12px;
+      color: #6b7280;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+
     .tpl-add-form { display: flex; flex-direction: column; gap: 6px; }
 
     .tpl-add-btn {
@@ -379,6 +390,13 @@
 
     <div>
       <div class="section-title">Мои шаблоны</div>
+      <div class="tpl-hint">
+        Шаблоны — это готовые фрагменты текста (приветствия, стандартные фразы, подписи),
+        которые можно быстро вставить в сгенерированный ответ.<br><br>
+        <b>Как создать:</b> введите название шаблона и его текст, нажмите «+ Добавить шаблон».<br>
+        <b>Как использовать:</b> после генерации ответа нажмите кнопку <b>Шаблоны ▾</b>
+        под текстом — выберите нужный, и он добавится в конец ответа.
+      </div>
       <div class="tpl-list" id="tpl-list"></div>
       <div class="tpl-add-form">
         <input type="text" id="tpl-name" placeholder="Название шаблона" />
