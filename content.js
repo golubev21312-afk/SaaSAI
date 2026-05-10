@@ -8,14 +8,16 @@ const DEFAULT_PROMPT = `Ты — опытный куратор онлайн-кл
 
 СТИЛЬ ОБЩЕНИЯ:
 - Всегда на "Вы", уважительно и тепло
-- Структурированный ответ: приветствие → анализ ситуации → объяснение → рекомендации → поддержка
+- Структурированный ответ: приветствие с именем → благодарность за отчёт → анализ ситуации → объяснение → рекомендации → поддержка
 - Используй медицинские термины понятным языком
 - Если ученик жалуется на симптомы — объясни почему это происходит и что делать
 - Если ученик доволен — искренне порадуйся и дай рекомендации по продолжению
 - Заканчивай подбадривающей фразой
 - Подпись: "С уважением, [имя куратора]" — имя куратора будет указано отдельно
 
-ВАЖНО:
+ВАЖНО — ОБЯЗАТЕЛЬНО ВСЕГДА:
+- ВСЕГДА начинай ответ с обращения по имени ученика (например "Здравствуйте, Анна!")
+- ВСЕГДА в начале благодари за отчёт (например "Спасибо за Ваш отчёт!", "Благодарю за подробный отчёт!")
 - Не придумывай конкретные упражнения или ссылки — только общие рекомендации
 - Не ставь диагнозы
 - Если симптом серьёзный — рекомендуй обратиться к специалисту
@@ -225,13 +227,14 @@ async function generateResponse(studentMessage, studentName, curatorName, length
     ? `Контекст страницы (курс, день, задание — используй если релевантно):\n${autoContext}\n\n`
     : '';
 
-  const userPrompt = `${contextBlock}Имя ученика: ${studentName || 'ученик'}
+  const nameLabel = studentName || 'ученик';
+  const userPrompt = `${contextBlock}Имя ученика: ${nameLabel}
 Имя куратора для подписи: ${curatorName}
 
 Отчёт/сообщение ученика:
 ${studentMessage}
 
-Напиши персональный ответ этому ученику.`;
+Напиши персональный ответ этому ученику. ОБЯЗАТЕЛЬНО начни с обращения по имени "${nameLabel}" и поблагодари за отчёт.`;
 
   const response = await fetch(GROQ_API_URL, {
     method: 'POST',
@@ -354,7 +357,6 @@ function createPanel(textEl) {
           <div class="ai-tpl-dropdown" style="display:none;"></div>
         </div>
         <button class="ai-copy-btn">Копировать</button>
-        <button class="ai-insert-btn">Вставить в поле</button>
       </div>
     </div>
   `;
@@ -364,7 +366,6 @@ function createPanel(textEl) {
   const resultTA   = wrap.querySelector('.ai-result-text');
   const closeBtn   = wrap.querySelector('.ai-close-btn');
   const regenBtn   = wrap.querySelector('.ai-regen-btn');
-  const insertBtn  = wrap.querySelector('.ai-insert-btn');
   const copyBtn    = wrap.querySelector('.ai-copy-btn');
   const wordCount  = wrap.querySelector('.ai-word-count');
   const tplBtn     = wrap.querySelector('.ai-tpl-btn');
@@ -491,17 +492,6 @@ function createPanel(textEl) {
       copyBtn.textContent = 'Скопировано!';
       setTimeout(() => { copyBtn.textContent = 'Копировать'; }, 2000);
     });
-  });
-
-  insertBtn.addEventListener('click', () => {
-    const field = findReplyField(block);
-    if (!field) {
-      alert('Не удалось найти поле для ответа. Скопируйте текст вручную.');
-      return;
-    }
-    insertTextToField(field, resultTA.value);
-    field.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    if (settings.togCollapse) panel.style.display = 'none';
   });
 
   return wrap;
