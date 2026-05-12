@@ -16,13 +16,31 @@ const DEFAULT_PROMPT = `Ты — опытный куратор онлайн-кл
 - Подпись: "С уважением, [имя куратора]" — имя куратора будет указано отдельно
 
 ВАЖНО — ОБЯЗАТЕЛЬНО ВСЕГДА:
-- ВСЕГДА начинай ответ с обращения по имени ученика (например "Здравствуйте, Анна!")
+- ВСЕГДА начинай ответ со слова "Здравствуйте" + имя ученика. Никогда не используй "Добрый день", "Добрый вечер", "Доброе утро", "Доброго времени" — только "Здравствуйте, [Имя]!"
 - ВСЕГДА в начале благодари за отчёт (например "Спасибо за Ваш отчёт!", "Благодарю за подробный отчёт!")
 - Не придумывай конкретные упражнения или ссылки — только общие рекомендации
 - Не ставь диагнозы
 - Если симптом серьёзный — рекомендуй обратиться к специалисту
 - Не используй markdown, звёздочки и прочее форматирование — только чистый текст
 - Каждое предложение пиши с новой строки`;
+
+// Фильтр: показываем только полезные шаблоны (симптомы, ситуации, советы)
+const USEFUL_CATEGORIES = new Set(['medical', 'no_report', 'report_first', 'report_final', 'motivation', 'info']);
+const GREETING_PREFIXES  = ['здравствуйте', 'добрый', 'доброго', 'доброе', 'дравствуйте', 'приветствую', 'рада привет'];
+// Слишком общие ключевые слова — не считаются конкретной темой
+const GENERIC_KEYWORDS   = new Set(['отчет', 'спасибо', 'ответ на отчет', 'здравствуйте', 'привет']);
+
+function isUsefulTemplate(tpl) {
+  const nl = tpl.name.toLowerCase();
+  if (GREETING_PREFIXES.some(p => nl.indexOf(p) !== -1)) return false;
+  if (tpl.category === 'greeting') return false;
+  if (USEFUL_CATEGORIES.has(tpl.category)) return true;
+  // general — только если есть хотя бы одно НЕ-общее ключевое слово
+  if (tpl.category === 'general' && tpl.keywords) {
+    return tpl.keywords.some(kw => !GENERIC_KEYWORDS.has(kw.toLowerCase()));
+  }
+  return false;
+}
 
 const LENGTH_CONFIG = {
   short:    { words: '40–80 слов',   max_tokens: 300 },
@@ -55,27 +73,40 @@ let settings = {
   togSentiment: true, togBatch: true, togDrafts: true,
 };
 
+function isExtensionAlive() {
+  try { return !!chrome.runtime?.id; } catch { return false; }
+}
+
 function loadSettings() {
   return new Promise(resolve => {
-    chrome.storage.local.get([
-      'groqApiKey', 'curatorName', 'templates', 'customPrompt',
-      'togSentiment', 'togBatch', 'togDrafts',
-    ], result => {
-      settings = {
-        apiKey:       result.groqApiKey   || '',
-        curatorName:  result.curatorName  || 'куратор',
-        templates:    result.templates    || [],
-        customPrompt: result.customPrompt || '',
-        togSentiment: result.togSentiment !== false,
-        togBatch:     result.togBatch     !== false,
-        togDrafts:    result.togDrafts    !== false,
-      };
-      resolve(settings);
-    });
+    if (!isExtensionAlive()) { resolve(settings); return; }
+    try {
+      chrome.storage.local.get([
+        'groqApiKey', 'curatorName', 'templates', 'customPrompt',
+        'togSentiment', 'togBatch', 'togDrafts',
+      ], result => {
+        if (chrome.runtime.lastError) { resolve(settings); return; }
+        settings = {
+          apiKey:       result.groqApiKey   || '',
+          curatorName:  result.curatorName  || 'куратор',
+          templates:    result.templates    || [],
+          customPrompt: result.customPrompt || '',
+          togSentiment: result.togSentiment !== false,
+          togBatch:     result.togBatch     !== false,
+          togDrafts:    result.togDrafts    !== false,
+        };
+        resolve(settings);
+      });
+    } catch { resolve(settings); }
   });
 }
 
-chrome.storage.onChanged.addListener(() => { loadSettings().then(applyToggles); });
+try {
+  chrome.storage.onChanged.addListener(() => {
+    if (!isExtensionAlive()) return;
+    loadSettings().then(applyToggles).catch(() => {});
+  });
+} catch { /* extension reloaded */ }
 
 // ── Утилиты ──
 
@@ -90,14 +121,23 @@ function detectSentiment(text) {
   return 'neutral';
 }
 
-function buildSystemPrompt(length, tone, sentiment) {
+function buildSystemPrompt(length, tone, sentiment, matchedTemplates) {
   const base = settings.customPrompt || DEFAULT_PROMPT;
   const lenCfg = LENGTH_CONFIG[length] || LENGTH_CONFIG.medium;
   const toneStr = TONE_CONFIG[tone] || TONE_CONFIG.warm;
   let sentimentNote = '';
   if (sentiment === 'positive') sentimentNote = '\nУченик настроен позитивно — искренне порадуйся его успехам.';
   if (sentiment === 'negative') sentimentNote = '\nУченик испытывает трудности — прояви особую заботу и поддержку.';
-  return `${base}\n- Длина ответа: ${lenCfg.words}\n- ${toneStr}${sentimentNote}`;
+
+  let examplesBlock = '';
+  if (matchedTemplates && matchedTemplates.length > 0) {
+    const examples = matchedTemplates
+      .map(t => `[Пример: "${t.name}"]\n${t.text.slice(0, 600)}`)
+      .join('\n\n---\n\n');
+    examplesBlock = `\n\nПРИМЕРЫ ОТВЕТОВ КУРАТОРА — изучи стиль, тон и структуру, пиши похоже:\n\n${examples}\n\n---\nСоблюдай такой же стиль в своём ответе.`;
+  }
+
+  return `${base}\n- Длина ответа: ${lenCfg.words}\n- ${toneStr}${sentimentNote}${examplesBlock}`;
 }
 
 function countWords(text) {
@@ -123,16 +163,20 @@ function loadDraft(text) {
 }
 
 function incrementStats() {
+  if (!isExtensionAlive()) return;
   const today = new Date().toISOString().slice(0, 10);
-  chrome.storage.local.get(['statsWeek'], result => {
-    const week = result.statsWeek || {};
-    week[today] = (week[today] || 0) + 1;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    Object.keys(week).forEach(d => { if (d < cutoffStr) delete week[d]; });
-    chrome.storage.local.set({ statsWeek: week });
-  });
+  try {
+    chrome.storage.local.get(['statsWeek'], result => {
+      if (chrome.runtime.lastError || !isExtensionAlive()) return;
+      const week = result.statsWeek || {};
+      week[today] = (week[today] || 0) + 1;
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 30);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      Object.keys(week).forEach(d => { if (d < cutoffStr) delete week[d]; });
+      try { chrome.storage.local.set({ statsWeek: week }); } catch { }
+    });
+  } catch { }
 }
 
 function looksLikeName(text) {
@@ -197,24 +241,57 @@ function extractAutoContext(textEl, studentMessage) {
   return result.length > 10 ? result : '';
 }
 
-async function generateResponse(studentMessage, studentName, curatorName, length, tone, autoContext) {
+async function generateResponse(studentMessage, studentName, curatorName, length, tone, autoContext, forcedTemplate) {
   if (!settings.apiKey) throw new Error('API ключ не настроен. Откройте настройки расширения.');
 
-  const sentiment = detectSentiment(studentMessage);
-  const systemPrompt = buildSystemPrompt(length, tone, sentiment);
+  let systemPrompt;
+  if (forcedTemplate) {
+    systemPrompt = `Ты — куратор онлайн-клиники здоровья "Клиника Картавенко".
+Тебе дан готовый шаблон ответа куратора и отчёт ученика. Адаптируй шаблон — не пиши ответ с нуля.
+
+ПРАВИЛА АДАПТАЦИИ:
+- Сохраняй структуру, стиль и объём шаблона
+- Подставь имя ученика вместо любого другого имени в шаблоне
+- Замени подпись на "С уважением, ${curatorName}"
+- При необходимости скорректируй 1–2 детали под содержание отчёта
+- НЕ придумывай новый текст — используй шаблон как готовую основу
+- Не используй markdown и звёздочки — только чистый текст
+- Каждое предложение с новой строки`;
+  } else {
+    const sentiment = detectSentiment(studentMessage);
+    const matchedTemplates = typeof findMatchingTemplates === 'function'
+      ? findMatchingTemplates(studentMessage, 2) : [];
+    systemPrompt = buildSystemPrompt(length, tone, sentiment, matchedTemplates);
+  }
 
   const contextBlock = autoContext
     ? `Контекст страницы (курс, день, задание — используй если релевантно):\n${autoContext}\n\n`
     : '';
 
   const nameLabel = studentName || 'ученик';
-  const userPrompt = `${contextBlock}Имя ученика: ${nameLabel}
+  let userPrompt;
+  if (forcedTemplate) {
+    userPrompt = `${contextBlock}Имя ученика: ${nameLabel}
+Имя куратора для подписи: ${curatorName}
+
+Возьми этот шаблон как основу и адаптируй его под конкретного ученика:
+---
+${forcedTemplate.text.slice(0, 800)}
+---
+
+Отчёт ученика:
+${studentMessage}
+
+Адаптируй шаблон: замени имя на "${nameLabel}", замени подпись на "С уважением, ${curatorName}", персонализируй текст под содержание отчёта ученика. Обязательно начни с "Здравствуйте, ${nameLabel}!".`;
+  } else {
+    userPrompt = `${contextBlock}Имя ученика: ${nameLabel}
 Имя куратора для подписи: ${curatorName}
 
 Отчёт/сообщение ученика:
 ${studentMessage}
 
 Напиши персональный ответ этому ученику. ОБЯЗАТЕЛЬНО начни с обращения по имени "${nameLabel}" и поблагодари за отчёт.`;
+  }
 
   const response = await fetch(GROQ_API_URL, {
     method: 'POST',
@@ -288,6 +365,55 @@ document.addEventListener('click', e => {
   }
 });
 
+// ── Категории шаблонов ──
+
+const CATEGORY_LABELS = {
+  medical:      '🩺 Медицинские',
+  motivation:   '💪 Мотивация',
+  info:         'ℹ️ Информация',
+  report_first: '📋 Первый день',
+  report_final: '🏆 Итоговый отчёт',
+  no_report:    '📝 Нет отчёта',
+  general:      '📌 Разное',
+};
+
+function renderTemplateItems(container, templates, onSelect) {
+  container.innerHTML = '';
+  if (!templates.length) {
+    const empty = document.createElement('div');
+    empty.className = 'ai-tpl-empty';
+    empty.textContent = 'Не найдено';
+    container.appendChild(empty);
+    return;
+  }
+
+  // Группируем по категории
+  const order = ['medical', 'motivation', 'info', 'report_first', 'report_final', 'no_report', 'general'];
+  const groups = {};
+  templates.forEach(tpl => {
+    const cat = tpl.category || 'general';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(tpl);
+  });
+
+  order.forEach(cat => {
+    if (!groups[cat] || !groups[cat].length) return;
+    const label = document.createElement('div');
+    label.className = 'ai-tpl-group-label';
+    label.textContent = CATEGORY_LABELS[cat] || cat;
+    container.appendChild(label);
+
+    groups[cat].forEach(tpl => {
+      const item = document.createElement('div');
+      item.className = 'ai-tpl-item';
+      item.textContent = tpl.name;
+      item.title = tpl.text.slice(0, 140) + '…';
+      item.addEventListener('click', () => onSelect(tpl));
+      container.appendChild(item);
+    });
+  });
+}
+
 // ── Панель ──
 
 function createPanel(textEl) {
@@ -319,6 +445,14 @@ function createPanel(textEl) {
         <button class="ai-tone-btn" data-tone="official">Официальный</button>
         <button class="ai-tone-btn" data-tone="brief">Кратко</button>
       </div>
+      <div class="ai-pretpl-row">
+        <div class="ai-pretpl-pick-wrap">
+          <button class="ai-pretpl-pick-btn">Шаблон ▾</button>
+          <div class="ai-pretpl-dropdown" style="display:none;"></div>
+        </div>
+        <span class="ai-pretpl-selected"></span>
+        <button class="ai-pretpl-clear" style="display:none;" title="Сбросить">✕</button>
+      </div>
       <button class="ai-gen-btn">
         <span class="ai-gen-label">Составить ответ ИИ</span>
       </button>
@@ -340,6 +474,7 @@ function createPanel(textEl) {
       </div>
       <div class="ai-result-actions">
         <button class="ai-regen-btn">Перегенерировать</button>
+        <button class="ai-adapt-btn" style="display:none">Адаптировать шаблон</button>
         <div class="ai-tpl-wrap">
           <button class="ai-tpl-btn">Шаблоны ▾</button>
           <div class="ai-tpl-dropdown" style="display:none;"></div>
@@ -355,6 +490,7 @@ function createPanel(textEl) {
   const closeBtn   = wrap.querySelector('.ai-close-btn');
   const regenBtn   = wrap.querySelector('.ai-regen-btn');
   const copyBtn    = wrap.querySelector('.ai-copy-btn');
+  const adaptBtn   = wrap.querySelector('.ai-adapt-btn');
   const wordCount  = wrap.querySelector('.ai-word-count');
   const tplBtn     = wrap.querySelector('.ai-tpl-btn');
   const tplDrop    = wrap.querySelector('.ai-tpl-dropdown');
@@ -363,6 +499,203 @@ function createPanel(textEl) {
   const refineBtns = wrap.querySelectorAll('.ai-refine-btn');
 
   const autoContext = extractAutoContext(textEl, studentMessage);
+
+  // Применяет шаблон в результат с подстановкой имён и очисткой форматирования
+  function applyTemplate(tpl) {
+    let txt = tpl.text;
+    // Нормализуем переносы: \r\n и \r → \n, убираем лишние пустые строки
+    txt = txt.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    const name = findName(block);
+    const curator = settings.curatorName || 'куратор';
+    txt = txt.replace(/С уважением[,\s]+[^\n]+/g, `С уважением, ${curator}`);
+    const hasGreeting = /^(здравствуйте|добрый|доброго)/i.test(txt.trim());
+    if (!hasGreeting && name) {
+      txt = `Здравствуйте, ${name}!\n\n${txt}`;
+    }
+    return txt;
+  }
+
+  // ── Выбор шаблона до генерации ──
+  let selectedTemplate = null;
+
+  const pretplPickBtn  = wrap.querySelector('.ai-pretpl-pick-btn');
+  const pretplDrop     = wrap.querySelector('.ai-pretpl-dropdown');
+  const pretplClearBtn = wrap.querySelector('.ai-pretpl-clear');
+  const pretplSelected = wrap.querySelector('.ai-pretpl-selected');
+
+  function setSelectedTemplate(tpl) {
+    selectedTemplate = tpl;
+    if (tpl) {
+      pretplPickBtn.textContent = 'Шаблон ▾';
+      pretplPickBtn.classList.add('ai-pretpl-pick-active');
+      pretplSelected.textContent = tpl.name.slice(0, 30) + (tpl.name.length > 30 ? '…' : '');
+      pretplSelected.title = tpl.name;
+      pretplClearBtn.style.display = 'inline-flex';
+      adaptBtn.style.display = '';
+    } else {
+      pretplPickBtn.textContent = 'Шаблон ▾';
+      pretplPickBtn.classList.remove('ai-pretpl-pick-active');
+      pretplSelected.textContent = '';
+      pretplClearBtn.style.display = 'none';
+      adaptBtn.style.display = 'none';
+    }
+  }
+
+  // Дропдаун — input создаётся один раз
+  const pretplSearchInput = document.createElement('input');
+  pretplSearchInput.className = 'ai-tpl-search';
+  pretplSearchInput.placeholder = 'Поиск шаблона...';
+  pretplSearchInput.addEventListener('click', e => e.stopPropagation());
+
+  const pretplSearchWrap = document.createElement('div');
+  pretplSearchWrap.className = 'ai-tpl-search-wrap';
+  pretplSearchWrap.appendChild(pretplSearchInput);
+
+  const pretplList = document.createElement('div');
+  pretplDrop.appendChild(pretplSearchWrap);
+  pretplDrop.appendChild(pretplList);
+
+  let preTplCategory = null;
+  const CAT_ORDER = ['medical', 'motivation', 'info', 'report_first', 'report_final', 'no_report', 'general'];
+
+  function getUsefulLib() {
+    return (typeof TEMPLATES_LIBRARY !== 'undefined' ? TEMPLATES_LIBRARY : []).filter(isUsefulTemplate);
+  }
+
+  function renderPreTplList(query) {
+    pretplList.innerHTML = '';
+    const lib = getUsefulLib();
+
+    if (query && query.trim()) {
+      // Поиск — плоский список
+      const searched = (typeof searchTemplates === 'function')
+        ? searchTemplates(query).filter(isUsefulTemplate)
+        : lib.filter(t => t.name.toLowerCase().includes(query.toLowerCase()));
+      if (!searched.length) {
+        const empty = document.createElement('div');
+        empty.className = 'ai-tpl-empty';
+        empty.textContent = 'Ничего не найдено';
+        pretplList.appendChild(empty);
+      } else {
+        searched.slice(0, 60).forEach(tpl => {
+          const item = document.createElement('div');
+          item.className = 'ai-tpl-item';
+          if (selectedTemplate?.name === tpl.name) item.classList.add('ai-tpl-item-selected');
+          item.textContent = tpl.name;
+          item.title = tpl.text.slice(0, 140) + '…';
+          item.addEventListener('click', () => {
+            const deselect = selectedTemplate?.name === tpl.name;
+            setSelectedTemplate(deselect ? null : tpl);
+            if (!deselect) {
+              const ready = applyTemplate(tpl);
+              resultTA.value = ready;
+              resultTA.dispatchEvent(new Event('input'));
+              panel.style.display = 'block';
+              saveDraft(studentMessage, ready);
+            }
+            pretplDrop.style.display = 'none';
+          });
+          pretplList.appendChild(item);
+        });
+      }
+      return;
+    }
+
+    if (preTplCategory === null) {
+      // Главный экран: список категорий
+      const counts = {};
+      lib.forEach(t => { const c = t.category || 'general'; counts[c] = (counts[c] || 0) + 1; });
+      CAT_ORDER.forEach(cat => {
+        if (!counts[cat]) return;
+        const item = document.createElement('div');
+        item.className = 'ai-tpl-item ai-pretpl-cat-item';
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = CATEGORY_LABELS[cat] || cat;
+        const countSpan = document.createElement('span');
+        countSpan.className = 'ai-pretpl-cat-count';
+        countSpan.textContent = counts[cat];
+        item.appendChild(nameSpan);
+        item.appendChild(countSpan);
+        item.addEventListener('click', e => { e.stopPropagation(); preTplCategory = cat; renderPreTplList(''); });
+        pretplList.appendChild(item);
+      });
+      return;
+    }
+
+    // Список шаблонов выбранной категории
+    const back = document.createElement('div');
+    back.className = 'ai-pretpl-back-btn';
+    back.textContent = '← Назад';
+    back.addEventListener('click', e => { e.stopPropagation(); preTplCategory = null; renderPreTplList(''); });
+    pretplList.appendChild(back);
+
+    const catLabel = document.createElement('div');
+    catLabel.className = 'ai-tpl-group-label';
+    catLabel.textContent = CATEGORY_LABELS[preTplCategory] || preTplCategory;
+    pretplList.appendChild(catLabel);
+
+    const catTpls = lib.filter(t => (t.category || 'general') === preTplCategory);
+    if (!catTpls.length) {
+      const empty = document.createElement('div');
+      empty.className = 'ai-tpl-empty';
+      empty.textContent = 'Нет шаблонов';
+      pretplList.appendChild(empty);
+    }
+    catTpls.forEach(tpl => {
+      const item = document.createElement('div');
+      item.className = 'ai-tpl-item';
+      if (selectedTemplate?.name === tpl.name) item.classList.add('ai-tpl-item-selected');
+      item.textContent = tpl.name;
+      item.title = tpl.text.slice(0, 140) + '…';
+      item.addEventListener('click', () => {
+        const deselect = selectedTemplate?.name === tpl.name;
+        setSelectedTemplate(deselect ? null : tpl);
+        if (!deselect) {
+          const ready = applyTemplate(tpl);
+          resultTA.value = ready;
+          resultTA.dispatchEvent(new Event('input'));
+          panel.style.display = 'block';
+          saveDraft(studentMessage, ready);
+        }
+        pretplDrop.style.display = 'none';
+      });
+      pretplList.appendChild(item);
+    });
+  }
+
+  pretplSearchInput.addEventListener('input', () => renderPreTplList(pretplSearchInput.value));
+
+  function buildPreTplDropdown() {
+    pretplSearchInput.value = '';
+    preTplCategory = null;
+    renderPreTplList('');
+  }
+
+  pretplPickBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (pretplDrop.style.display !== 'none') { pretplDrop.style.display = 'none'; return; }
+    buildPreTplDropdown();
+
+    // Позиционируем через fixed — чтобы не обрезался родительскими overflow
+    const rect = pretplPickBtn.getBoundingClientRect();
+    pretplDrop.style.position = 'fixed';
+    pretplDrop.style.right = (window.innerWidth - rect.right) + 'px';
+    pretplDrop.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+    pretplDrop.style.left = 'auto';
+    pretplDrop.style.top = 'auto';
+    pretplDrop.style.display = 'block';
+
+    setTimeout(() => pretplSearchInput.focus(), 50);
+  });
+
+  pretplClearBtn.addEventListener('click', () => setSelectedTemplate(null));
+
+  // Закрытие дропдауна при клике вне (fixed-позиционирован, поэтому проверяем оба)
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.ai-pretpl-pick-wrap') && !e.target.closest('.ai-pretpl-dropdown')) {
+      pretplDrop.style.display = 'none';
+    }
+  }, { capture: false });
 
   if (savedDraft) {
     resultTA.value = savedDraft;
@@ -390,27 +723,101 @@ function createPanel(textEl) {
     wordCount.textContent = n ? `${n} сл.` : '';
   });
 
-  // Шаблоны
-  tplBtn.addEventListener('click', () => {
-    if (tplDrop.style.display !== 'none') { tplDrop.style.display = 'none'; return; }
-    tplDrop.innerHTML = '';
-    const templates = settings.templates;
-    if (!templates.length) {
-      tplDrop.innerHTML = '<div class="ai-tpl-empty">Нет шаблонов. Добавьте в настройках.</div>';
-    } else {
-      templates.forEach(tpl => {
+  // Шаблоны — input создаётся один раз, список обновляется отдельно
+  const tplSearchInput = document.createElement('input');
+  tplSearchInput.className = 'ai-tpl-search';
+  tplSearchInput.placeholder = 'Поиск шаблона...';
+  tplSearchInput.addEventListener('click', e => e.stopPropagation());
+
+  const tplSearchWrap = document.createElement('div');
+  tplSearchWrap.className = 'ai-tpl-search-wrap';
+  tplSearchWrap.appendChild(tplSearchInput);
+
+  const tplList = document.createElement('div');
+  tplDrop.appendChild(tplSearchWrap);
+  tplDrop.appendChild(tplList);
+
+  function renderTplList(query) {
+    tplList.innerHTML = '';
+    const insertTpl = tpl => {
+      resultTA.value = resultTA.value ? resultTA.value + '\n\n' + tpl.text : tpl.text;
+      resultTA.dispatchEvent(new Event('input'));
+      tplDrop.style.display = 'none';
+    };
+
+    // Рекомендуемые (только без поискового запроса)
+    const suggestedNames = new Set();
+    if (!query && typeof findMatchingTemplates === 'function') {
+      const suggested = findMatchingTemplates(studentMessage, 3).filter(isUsefulTemplate);
+      if (suggested.length > 0) {
+        const sugLabel = document.createElement('div');
+        sugLabel.className = 'ai-tpl-group-label';
+        sugLabel.textContent = '⭐ Рекомендуемые';
+        tplList.appendChild(sugLabel);
+        suggested.forEach(tpl => {
+          suggestedNames.add(tpl.name);
+          const item = document.createElement('div');
+          item.className = 'ai-tpl-item ai-tpl-suggested';
+          item.textContent = tpl.name;
+          item.title = tpl.text.slice(0, 140) + '…';
+          item.addEventListener('click', () => insertTpl(tpl));
+          tplList.appendChild(item);
+        });
+      }
+    }
+
+    // Ручные шаблоны из настроек
+    const manualTemplates = settings.templates || [];
+    if (manualTemplates.length > 0) {
+      const manLabel = document.createElement('div');
+      manLabel.className = 'ai-tpl-group-label';
+      manLabel.textContent = '📁 Мои шаблоны';
+      tplList.appendChild(manLabel);
+      manualTemplates.forEach(tpl => {
+        if (query && !tpl.name.toLowerCase().includes(query.toLowerCase()) &&
+            !tpl.text.toLowerCase().includes(query.toLowerCase())) return;
         const item = document.createElement('div');
         item.className = 'ai-tpl-item';
         item.textContent = tpl.name;
-        item.addEventListener('click', () => {
-          resultTA.value = resultTA.value ? resultTA.value + '\n\n' + tpl.text : tpl.text;
-          resultTA.dispatchEvent(new Event('input'));
-          tplDrop.style.display = 'none';
-        });
-        tplDrop.appendChild(item);
+        item.addEventListener('click', () => insertTpl(tpl));
+        tplList.appendChild(item);
       });
     }
+
+    // Библиотека с группировкой по категориям
+    const libTemplates = (typeof searchTemplates === 'function')
+      ? searchTemplates(query || '')
+      : (typeof TEMPLATES_LIBRARY !== 'undefined' ? TEMPLATES_LIBRARY : []);
+    const filtered = libTemplates.filter(t => !suggestedNames.has(t.name) && isUsefulTemplate(t));
+
+    if (filtered.length > 0) {
+      renderTemplateItems(tplList, filtered.slice(0, 60), insertTpl);
+      if (filtered.length > 60) {
+        const more = document.createElement('div');
+        more.className = 'ai-tpl-empty';
+        more.textContent = `Ещё ${filtered.length - 60} — уточните поиск`;
+        tplList.appendChild(more);
+      }
+    } else if (!manualTemplates.length) {
+      const empty = document.createElement('div');
+      empty.className = 'ai-tpl-empty';
+      empty.textContent = 'Ничего не найдено';
+      tplList.appendChild(empty);
+    }
+  }
+
+  tplSearchInput.addEventListener('input', () => renderTplList(tplSearchInput.value));
+
+  function buildTemplateDropdown() {
+    tplSearchInput.value = '';
+    renderTplList('');
+  }
+
+  tplBtn.addEventListener('click', () => {
+    if (tplDrop.style.display !== 'none') { tplDrop.style.display = 'none'; return; }
+    buildTemplateDropdown();
     tplDrop.style.display = 'block';
+    setTimeout(() => tplSearchInput.focus(), 50);
   });
 
   // Быстрые правки
@@ -452,7 +859,7 @@ function createPanel(textEl) {
 
       const reply = await generateResponse(
         studentMessage, findName(block), settings.curatorName,
-        wrap.dataset.length, wrap.dataset.tone, autoContext
+        wrap.dataset.length, wrap.dataset.tone, autoContext, selectedTemplate
       );
       resultTA.value = reply;
       resultTA.dispatchEvent(new Event('input'));
@@ -467,8 +874,43 @@ function createPanel(textEl) {
     }
   }
 
+  async function doAdaptTemplate() {
+    if (!selectedTemplate) return;
+    await loadSettings();
+    const tpl = selectedTemplate;
+    genBtn.disabled = true;
+    wrap.querySelector('.ai-gen-label').textContent = 'Адаптирую...';
+    panel.style.display = 'block';
+    resultTA.value = 'ИИ адаптирует шаблон...';
+    wordCount.textContent = '';
+    regenBtn.disabled = true;
+    adaptBtn.disabled = true;
+
+    try {
+      if (!studentMessage || studentMessage.length < 10) {
+        throw new Error('Не удалось найти текст ученика. Попробуйте обновить страницу.');
+      }
+      const reply = await generateResponse(
+        studentMessage, findName(block), settings.curatorName,
+        wrap.dataset.length, wrap.dataset.tone, autoContext, tpl
+      );
+      resultTA.value = reply;
+      resultTA.dispatchEvent(new Event('input'));
+      saveDraft(studentMessage, reply);
+      incrementStats();
+    } catch (err) {
+      resultTA.value = `❌ Ошибка: ${err.message}`;
+    } finally {
+      genBtn.disabled = false;
+      wrap.querySelector('.ai-gen-label').textContent = 'Составить ответ ИИ';
+      regenBtn.disabled = false;
+      adaptBtn.disabled = false;
+    }
+  }
+
   genBtn.addEventListener('click', doGenerate);
-  regenBtn.addEventListener('click', doGenerate);
+  regenBtn.addEventListener('click', () => selectedTemplate ? doAdaptTemplate() : doGenerate());
+  adaptBtn.addEventListener('click', doAdaptTemplate);
   wrap.addEventListener('ai-generate', doGenerate);
 
   closeBtn.addEventListener('click', () => { panel.style.display = 'none'; });
@@ -485,69 +927,10 @@ function createPanel(textEl) {
   return wrap;
 }
 
-// ── Пакетная генерация ──
-
-let batchBtn = null;
-
-async function runBatchGeneration() {
-  const wraps = [...document.querySelectorAll('.ai-block-wrap')];
-  if (!wraps.length) return;
-
-  batchBtn.disabled = true;
-
-  try {
-    for (let i = 0; i < wraps.length; i++) {
-      batchBtn.textContent = `Генерирую ${i + 1} / ${wraps.length}...`;
-      const wrap = wraps[i];
-      const genBtn = wrap.querySelector('.ai-gen-btn');
-
-      wrap.dispatchEvent(new CustomEvent('ai-generate'));
-
-      await new Promise(r => setTimeout(r, 300));
-      await new Promise(resolve => {
-        const timeout = setTimeout(resolve, 30000);
-        const check = setInterval(() => {
-          if (!genBtn.disabled) {
-            clearInterval(check);
-            clearTimeout(timeout);
-            resolve();
-          }
-        }, 400);
-      });
-
-      await new Promise(r => setTimeout(r, 400));
-    }
-    showToast(`Готово! Сгенерировано ${wraps.length} ответов`);
-  } catch (err) {
-    showToast('Ошибка пакетной генерации: ' + err.message, 'error');
-  } finally {
-    batchBtn.textContent = 'Сгенерировать все';
-    batchBtn.disabled = false;
-  }
-}
-
 function applyToggles() {
-  if (batchBtn) {
-    batchBtn.style.display = settings.togBatch ? 'flex' : 'none';
-  }
   document.querySelectorAll('.ai-sentiment-badge').forEach(b => {
     b.style.display = settings.togSentiment ? '' : 'none';
   });
-}
-
-function ensureBatchButton() {
-  const count = document.querySelectorAll('.answer-text').length;
-  if (batchBtn) {
-    batchBtn.style.display = (count >= 2 && settings.togBatch) ? 'flex' : 'none';
-    return;
-  }
-  if (count < 2 || !settings.togBatch) return;
-
-  batchBtn = document.createElement('button');
-  batchBtn.className = 'ai-batch-btn';
-  batchBtn.textContent = 'Сгенерировать все';
-  batchBtn.addEventListener('click', runBatchGeneration);
-  document.body.appendChild(batchBtn);
 }
 
 // ── Горячая клавиша Alt+G ──
@@ -582,7 +965,6 @@ function scanPage() {
   document.querySelectorAll('.answer-text').forEach(el => {
     if (!el.dataset.aiDone) processTextEl(el);
   });
-  ensureBatchButton();
 }
 
 // Debounce — scanPage не вызывается на каждое изменение DOM, а ждёт паузы в 300мс

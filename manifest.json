@@ -19,7 +19,7 @@
         "https://doktor-kartavenko24.ru/teach/control/answers/*",
         "https://kartavenkodoc.com/teach/control/answers/*"
       ],
-      "js": ["content.js"],
+      "js": ["templates-library.js", "content.js"],
       "css": ["styles.css"],
       "run_at": "document_idle"
     }
